@@ -2,6 +2,766 @@
 
 https://www.zybuluo.com/mdeditor
 
+# Cento7下开发环境搭建(mysql 5.6.35+ redis)
+
+## 安装依赖库
+yum -y install wget vim git texinfo patch make cmake gcc gcc-c++ gcc-g77 flex bison file libtool libtool-libs autoconf kernel-devel libjpeg libjpeg-devel libpng libpng-devel libpng10 libpng10-devel gd gd-devel freetype freetype-devel libxml2 libxml2-devel zlib zlib-devel glib2 glib2-devel bzip2 bzip2-devel libevent libevent-devel ncurses ncurses-devel curl curl-devel e2fsprogs e2fsprogs-devel krb5 krb5-devel libidn libidn-devel openssl openssl-devel vim-minimal nano fonts-chinese gettext gettext-devel ncurses-devel gmp-devel pspell-devel unzip libcap diffutils
+
+（gcc-g77，libpng10， libpng10-devel， gd-devel， libevent-devel， krb5，libidn-devel，fonts-chinese ，pspell-devel缺没有关系）
+
+
+## 安装mysql
+安装依赖
+```
+yum install net-tools perl
+yum install perl-Module-Install.noarch
+rpm -qa |grep -i mariadb
+rpm -e mariadb-libs-5.5.44-2.el7.centos.x86_64 --nodeps
+```
+先创建组和用户再安装
+```
+groupadd mysql
+useradd -s /sbin/nologin -M -g mysql mysql
+```
+安装mysql5.6.35
+下载 MySQL-5.6.35-1.el7.x86_64.rpm-bundle.tar 解压得到下面几个rpm
+```
+[root@localhost mysql-5.6.35]# ls
+MySQL-client-5.6.35-1.el7.x86_64.rpm
+MySQL-devel-5.6.35-1.el7.x86_64.rpm
+MySQL-embedded-5.6.35-1.el7.x86_64.rpm
+MySQL-server-5.6.35-1.el7.x86_64.rpm
+MySQL-shared-5.6.35-1.el7.x86_64.rpm
+MySQL-shared-compat-5.6.35-1.el7.x86_64.rpm
+MySQL-test-5.6.35-1.el7.x86_64.rpm
+[root@localhost mysql-5.6.35]# rpm -ivh *.rpm
+```
+
+看安装时输出的提示内容：
+```
+	A RANDOM PASSWORD HAS BEEN SET FOR THE MySQL root USER !
+	You will find that password in '/root/.mysql_secret'.
+
+	You must change that password on your first connect,
+	no other statement but 'SET PASSWORD' will be accepted.
+	See the manual for the semantics of the 'password expired' flag.
+
+	Also, the account for the anonymous user has been removed.
+
+	In addition, you can run:
+
+	  /usr/bin/mysql_secure_installation
+
+	which will also give you the option of removing the test database.
+	This is strongly recommended for production servers.
+
+	See the manual for more instructions.
+
+	Please report any problems at http://bugs.mysql.com/
+
+	The latest information about MySQL is available on the web at
+
+	  http://www.mysql.com
+
+	Support MySQL by buying support/licenses at http://shop.mysql.com
+
+	New default config file was created as /usr/my.cnf and
+	will be used by default by the server when you start it.
+	You may edit this file to change server settings
+```
+
+初始密码在： /root/.mysql_secret 这个文件里有
+默认配置文件： /usr/my.cnf 
+
+查看生成的随机密码
+vim /root/.mysql_secret
+
+```
+# The random password set for the root user at Mon Feb 20 10:28:39 2017 (local time): 9lQbqBuyz7bz57x6
+```
+那么默认密码就是 9lQbqBuyz7bz57x6
+
+修改root密码
+mysqladmin -u root -p password 新密码
+
+默认的配置本人持鄙视态度，所以要自己配置
+
+创建配置： /etc/my.cnf
+
+```
+
+# Example MySQL config file for small systems.
+#
+# This is for a system with little memory (<= 64M) where MySQL is only used
+# from time to time and it's important that the mysqld daemon
+# doesn't use much resources.
+#
+# MySQL programs look for option files in a set of
+# locations which depend on the deployment platform.
+# You can copy this option file to one of those
+# locations. For information about these locations, see:
+# http://dev.mysql.com/doc/mysql/en/option-files.html
+#
+# In this file, you can use all long options that a program supports.
+# If you want to know which options a program supports, run the program
+# with the "--help" option.
+
+# The following options will be passed to all MySQL clients
+[client]
+#password    = your_password
+port        = 3306
+socket        = /var/lib/mysql/mysql.sock
+default-character-set=utf8
+#character-set-client = gbk
+
+# Here follows entries for some specific programs
+
+# The MySQL server
+[mysqld]
+port        = 3306
+socket        = /var/lib/mysql/mysql.sock
+datadir = /usr/mysql/data
+skip-external-locking
+lower_case_table_names=1
+character-set-server = utf8
+
+#skip_name_resolve  
+
+#key_buffer_size = 16M
+#他人经验值，查询排序时所能使用的缓冲区大小。所以，对于内存在4GB左右的服务器推荐设置为6-8M。  
+#sort_buffer_size = 1M
+
+
+max_allowed_packet = 32M
+
+
+#使用查询缓冲，MySQL将SELECT语句和查询结果存放在缓冲区中，今后对于同样的SELECT语句（区分大小写），将直接从缓冲区中读取结果
+query_cache_size = 32M
+#query_cache_type 0 代表不使用缓冲， 1 代表使用缓冲，2 代表根据需要使用。
+#设置 1 代表缓冲永远有效，如果不需要缓冲，就需要使用如下语句：
+#SELECT SQL_NO_CACHE * FROM my_table WHERE ...
+#如果设置为 2 ，需要开启缓冲，可以用如下语句：
+#SELECT SQL_CACHE * FROM my_table WHERE ...
+query_cache_type= 1
+
+#要求MySQL能有的连接数量。当主要MySQL线程在一个很短时间内得到非常多的连接请求，这就起作用，然后主线程花些时间(尽管很短)检查连接并且启动一个新线程。
+#back_log值指出在MySQL暂时停止回答新请求之前的短时间内多少个请求可以被存在堆栈中
+back_log=100
+
+#临时表的大小（4G配置）
+tmp_table_size = 256M  
+
+#并发连接数目最大，
+#指定MySQL允许的最大连接进程数。如果在访问论坛时经常出现Too Many Connections的错误提 示，则需要增大该参数值。
+max_connections=500
+
+#没找到具体说明，不过设置为32后 20天才创建了400多个线程 而以前一天就创建了上千个线程 所以还是有用的
+thread_cache_size = 32
+
+#目的待定，他人经验值，
+#指定一个请求的最大连接时间，对于4GB左右内存的服务器可以设置为5-10。
+interactive_timeout=28800
+wait_timeout =28800
+
+
+#设置为你的cpu数目x2,例如，只有一个cpu,那么thread_concurrency=2
+#有2个cpu,那么thread_concurrency=4
+thread_concurrency = 8
+
+#增加table_open_cache，会增加文件描述符，当把table_open_cache设置为很大时，如果系统处理不了那么多文件描述符，那么就会出现客户端失效
+#如果我们把table_open_cache设置小一点，那么mysql会随着table cache的不足，而关闭不用或者少用的表的cache，这样会释放文件描述符
+#指定表高速缓存的大小。每当MySQL访问一个表时，如果在表缓冲区中还有空间，该表就被打开并放入其中，这样可以更快地访问表内容。
+#通过检查峰值时间的状态值Open_tables和Opened_tables，可以决定是否需要增加table_cache的值。如果你发现open_tables等于table_cache，
+#并且opened_tables在不断增长，那么你就需要增加table_cache的值了（上述状态值可以使用SHOW STATUS LIKE ‘Open%tables’获得）。
+#注意，不能盲目地把table_cache设置成很大的值。如果设置得太高，可能会造成文件描述符不足，从而造成性能不稳定或者连接失败。对于有1G内存的机器，推荐值是128－256。
+table_open_cache = 256
+
+#读查询操作所能使用的缓冲区大小。和sort_buffer_size一样，该参数对应的分配内存也是每连接独享。
+read_buffer_size = 4M   
+
+#联合查询操作所能使用的缓冲区大小，和sort_buffer_size一样，该参数对应的分配内存也是每连接独享。  
+join_buffer_size = 8M   
+
+read_rnd_buffer_size = 256K
+net_buffer_length = 2K
+thread_stack = 128K
+
+# Don't listen on a TCP/IP port at all. This can be a security enhancement,
+# if all processes that need to connect to mysqld run on the same host.
+# All interaction with mysqld must be made via Unix sockets or named pipes.
+# Note that using this option without enabling named pipes on Windows
+# (using the "enable-named-pipe" option) will render mysqld useless!
+#
+#skip-networking
+server-id    = 2
+
+# Uncomment the following if you want to log updates
+#log_bin指定日志文件，如果不提供文件名，MySQL将自己产生缺省文件名。MySQL会在文件名后面自动添加数字引，每次启动服务时，都会重新生成一个新的二进制文件。
+#此外，使用log-bin-index可以指定索引文件；使用binlog-do-db可以指定记录的数据库；使用binlog-ignore-db可以指定不记录的数据库。
+#注意的是：binlog-do-db和binlog-ignore-db一次只指定一个数据库，指定多个数据库需要多个语句。而且，MySQL会将所有的数据库名称改成小写，在指定数据库时必须全部使用小写名字，否则不会起作用。
+#关掉这个功能只需要在他前面加上#号
+#log-bin=mysql-bin
+
+# binary logging format - mixed recommended
+#binlog_format=mixed
+
+# Causes updates to non-transactional engines using statement format to be
+# written directly to binary log. Before using this option make sure that
+# there are no dependencies between transactional and non-transactional
+# tables such as in the statement INSERT INTO t_myisam SELECT * FROM
+# t_innodb; otherwise, slaves may diverge from the master.
+#binlog_direct_non_transactional_updates=TRUE
+
+# Uncomment the following if you are using InnoDB tables
+#innodb_data_home_dir = /opt/database/mysql/data
+#innodb_data_file_path = ibdata1:10M:autoextend
+#innodb_log_group_home_dir = /opt/database/mysql/data
+# You can set .._buffer_pool_size up to 50 - 80 %
+# of RAM but beware of setting memory usage too high
+#这是InnoDB最重要的设置，对InnoDB性能有决定性的影响。默认的设置只有8M，所以默认的数据库设置下面InnoDB性能很差。在只有InnoDB存储引擎的数据库服务器上面，可以设置60-80%的内存。
+#更精确一点，在内存容量允许的情况下面设置比InnoDB tablespaces大10%的内存大小。
+innodb_buffer_pool_size = 1G
+
+#作用：用来存放Innodb的内部目录
+#这个值不用分配太大，系统可以自动调。不用设置太高。通常比较大数据设置16Ｍ够用了，如果表比较多，可以适当的增大。如果这个值自动增加，会在error log有中显示的。
+innodb_additional_mem_pool_size = 16M
+
+#作用：指定日值的大小
+#分配原则：几个日值成员大小加起来差不多和你的innodb_buffer_pool_size相等。上限为每个日值上限大小为4G.一般控制在几个ＬＯＧ文件相加大小在２Ｇ以内为佳。具体情况还需要看你的事务大小，数据大小为依据。
+#说明：这个值分配的大小和数据库的写入速度，事务大小，异常重启后的恢复有很大的关系。
+#该参数决定了recovery speed。太大的话recovery就会比较慢，太小了影响查询性能，一般取256M可以兼顾性能和recovery的速度
+innodb_log_file_size = 256M
+
+#磁盘速度是很慢的，直接将log写道磁盘会影响InnoDB的性能，该参数设定了log buffer的大小，一般4M。如果有大的blob操作，可以适当增大。
+#作用：事务在内存中的缓冲。
+#分配原则：控制在2-8M.这个值不用太多的。他里面的内存一般一秒钟写到磁盘一次。具体写入方式和你的事务提交方式有关。在Ｏｒａｃｌｅ等数据库了解这个，一般最大指定为３Ｍ比较合适。
+innodb_log_buffer_size = 5M
+
+#设置为0就是等到innodb_log_buffer_size列队满后再统一储存,默认为1
+# 该参数设定了事务提交时内存中log信息的处理。
+#1) =1时，在每个事务提交时，日志缓冲被写到日志文件，对日志文件做到磁盘操作的刷新。Truly ACID。速度慢。
+#2) =2时，在每个事务提交时，日志缓冲被写到文件，但不对日志文件做到磁盘操作的刷新。只有操作系统崩溃或掉电才会删除最后一秒的事务，不然不会丢失事务。
+#3) =0时， 日志缓冲每秒一次地被写到日志文件，并且对日志文件做到磁盘操作的刷新。任何mysqld进程的崩溃会删除崩溃前最后一秒的事务
+innodb_flush_log_at_trx_commit = 2
+
+#默认参数:innodb_lock_wait_timeout设置锁等待的时间是50s,
+#因为有的锁等待超过了这个时间,所以抱错.
+#你可以把这个时间加长,或者优化存储过程,事务避免过长时间的等待.
+innodb_lock_wait_timeout = 600
+
+#你的服务器CPU有几个就设置为几,建议用默认一般为8
+innodb_thread_concurrency=8            
+
+
+[mysqldump]
+quick
+max_allowed_packet = 16M
+
+[mysql]
+no-auto-rehash
+# Remove the next comment character if you are not familiar with SQL
+#safe-updates
+
+[myisamchk]
+key_buffer_size = 64M
+sort_buffer_size = 4M
+
+[mysqlhotcopy]
+interactive-timeout
+
+```
+
+看我的配置里面 datadir路径是：
+datadir = /usr/mysql/data
+
+所以要设置权限：
+chown -R mysql /usr/mysql/data
+chgrp -R mysql /usr/mysql/.
+
+默认的 datadir改了 启动脚本也要跟着改
+
+vim /etc/init.d/mysql
+
+```
+#!/bin/sh
+# Copyright Abandoned 1996 TCX DataKonsult AB & Monty Program KB & Detron HB
+# This file is public domain and comes with NO WARRANTY of any kind
+
+# MySQL daemon start/stop script.
+
+# Usually this is put in /etc/init.d (at least on machines SYSV R4 based
+# systems) and linked to /etc/rc3.d/S99mysql and /etc/rc0.d/K01mysql.
+# When this is done the mysql server will be started when the machine is
+# started and shut down when the systems goes down.
+
+# Comments to support chkconfig on RedHat Linux
+# chkconfig: 2345 64 36
+# description: A very fast and reliable SQL database engine.
+
+# Comments to support LSB init script conventions
+### BEGIN INIT INFO
+# Provides: mysql
+# Required-Start: $local_fs $network $remote_fs
+# Should-Start: ypbind nscd ldap ntpd xntpd
+# Required-Stop: $local_fs $network $remote_fs
+# Default-Start:  2 3 4 5
+# Default-Stop: 0 1 6
+# Short-Description: start and stop MySQL
+# Description: MySQL is a very fast and reliable SQL database engine.
+### END INIT INFO
+ 
+# If you install MySQL on some other places than /usr, then you
+# have to do one of the following things for this script to work:
+#
+# - Run this script from within the MySQL installation directory
+# - Create a /etc/my.cnf file with the following information:
+#   [mysqld]
+#   basedir=<path-to-mysql-installation-directory>
+# - Add the above to any other configuration file (for example ~/.my.ini)
+#   and copy my_print_defaults to /usr/bin
+# - Add the path to the mysql-installation-directory to the basedir variable
+#   below.
+#
+# If you want to affect other MySQL variables, you should make your changes
+# in the /etc/my.cnf, ~/.my.cnf or other MySQL configuration files.
+
+# If you change base dir, you must also change datadir. These may get
+# overwritten by settings in the MySQL configuration files.
+
+basedir=/usr
+datadir=/usr/mysql/data
+
+# Default value, in seconds, afterwhich the script should timeout waiting
+# for server start. 
+# Value here is overriden by value in my.cnf. 
+# 0 means don't wait at all
+# Negative numbers mean to wait indefinitely
+service_startup_timeout=900
+
+# Lock directory for RedHat / SuSE.
+lockdir='/var/lock/subsys'
+lock_file_path="$lockdir/mysql"
+
+# The following variables are only set for letting mysql.server find things.
+
+# Set some defaults
+mysqld_pid_file_path=
+if test -z "$basedir"
+then
+  basedir=/usr
+  bindir=/usr/bin
+  if test -z "$datadir"
+  then
+    datadir=/var/lib/mysql
+  fi
+  sbindir=/usr/sbin
+  libexecdir=/usr/sbin
+else
+  bindir="$basedir/bin"
+  if test -z "$datadir"
+  then
+    datadir="$basedir/data"
+  fi
+  sbindir="$basedir/sbin"
+  libexecdir="$basedir/libexec"
+fi
+
+# datadir_set is used to determine if datadir was set (and so should be
+# *not* set inside of the --basedir= handler.)
+datadir_set=
+
+#
+# Use LSB init script functions for printing messages, if possible
+#
+lsb_functions="/lib/lsb/init-functions"
+if test -f $lsb_functions ; then
+  . $lsb_functions
+else
+  log_success_msg()
+  {
+    echo " SUCCESS! $@"
+  }
+  log_failure_msg()
+  {
+    echo " ERROR! $@"
+  }
+fi
+
+PATH="/sbin:/usr/sbin:/bin:/usr/bin:$basedir/bin"
+export PATH
+
+mode=$1    # start or stop
+
+[ $# -ge 1 ] && shift
+
+
+other_args="$*"   # uncommon, but needed when called from an RPM upgrade action
+           # Expected: "--skip-networking --skip-grant-tables"
+           # They are not checked here, intentionally, as it is the resposibility
+           # of the "spec" file author to give correct arguments only.
+
+case `echo "testing\c"`,`echo -n testing` in
+    *c*,-n*) echo_n=   echo_c=     ;;
+    *c*,*)   echo_n=-n echo_c=     ;;
+    *)       echo_n=   echo_c='\c' ;;
+esac
+
+parse_server_arguments() {
+  for arg do
+    case "$arg" in
+      --basedir=*)  basedir=`echo "$arg" | sed -e 's/^[^=]*=//'`
+                    bindir="$basedir/bin"
+		    if test -z "$datadir_set"; then
+		      datadir="$basedir/data"
+		    fi
+		    sbindir="$basedir/sbin"
+		    libexecdir="$basedir/libexec"
+        ;;
+      --datadir=*)  datadir=`echo "$arg" | sed -e 's/^[^=]*=//'`
+		    datadir_set=1
+	;;
+      --pid-file=*) mysqld_pid_file_path=`echo "$arg" | sed -e 's/^[^=]*=//'` ;;
+      --service-startup-timeout=*) service_startup_timeout=`echo "$arg" | sed -e 's/^[^=]*=//'` ;;
+    esac
+  done
+}
+
+wait_for_pid () {
+  verb="$1"           # created | removed
+  pid="$2"            # process ID of the program operating on the pid-file
+  pid_file_path="$3" # path to the PID file.
+
+  i=0
+  avoid_race_condition="by checking again"
+
+  while test $i -ne $service_startup_timeout ; do
+
+    case "$verb" in
+      'created')
+        # wait for a PID-file to pop into existence.
+        test -s "$pid_file_path" && i='' && break
+        ;;
+      'removed')
+        # wait for this PID-file to disappear
+        test ! -s "$pid_file_path" && i='' && break
+        ;;
+      *)
+        echo "wait_for_pid () usage: wait_for_pid created|removed pid pid_file_path"
+        exit 1
+        ;;
+    esac
+
+    # if server isn't running, then pid-file will never be updated
+    if test -n "$pid"; then
+      if kill -0 "$pid" 2>/dev/null; then
+        :  # the server still runs
+      else
+        # The server may have exited between the last pid-file check and now.  
+        if test -n "$avoid_race_condition"; then
+          avoid_race_condition=""
+          continue  # Check again.
+        fi
+
+        # there's nothing that will affect the file.
+        log_failure_msg "The server quit without updating PID file ($pid_file_path)."
+        return 1  # not waiting any more.
+      fi
+    fi
+
+    echo $echo_n ".$echo_c"
+    i=`expr $i + 1`
+    sleep 1
+
+  done
+
+  if test -z "$i" ; then
+    log_success_msg
+    return 0
+  else
+    log_failure_msg
+    return 1
+  fi
+}
+
+# Get arguments from the my.cnf file,
+# the only group, which is read from now on is [mysqld]
+if test -x ./bin/my_print_defaults
+then
+  print_defaults="./bin/my_print_defaults"
+elif test -x $bindir/my_print_defaults
+then
+  print_defaults="$bindir/my_print_defaults"
+elif test -x $bindir/mysql_print_defaults
+then
+  print_defaults="$bindir/mysql_print_defaults"
+else
+  # Try to find basedir in /etc/my.cnf
+  conf=/etc/my.cnf
+  print_defaults=
+  if test -r $conf
+  then
+    subpat='^[^=]*basedir[^=]*=\(.*\)$'
+    dirs=`sed -e "/$subpat/!d" -e 's//\1/' $conf`
+    for d in $dirs
+    do
+      d=`echo $d | sed -e 's/[ 	]//g'`
+      if test -x "$d/bin/my_print_defaults"
+      then
+        print_defaults="$d/bin/my_print_defaults"
+        break
+      fi
+      if test -x "$d/bin/mysql_print_defaults"
+      then
+        print_defaults="$d/bin/mysql_print_defaults"
+        break
+      fi
+    done
+  fi
+
+  # Hope it's in the PATH ... but I doubt it
+  test -z "$print_defaults" && print_defaults="my_print_defaults"
+fi
+
+#
+# Read defaults file from 'basedir'.   If there is no defaults file there
+# check if it's in the old (depricated) place (datadir) and read it from there
+#
+
+extra_args=""
+if test -r "$basedir/my.cnf"
+then
+  extra_args="-e $basedir/my.cnf"
+else
+  if test -r "$datadir/my.cnf"
+  then
+    extra_args="-e $datadir/my.cnf"
+  fi
+fi
+
+parse_server_arguments `$print_defaults $extra_args mysqld server mysql_server mysql.server`
+
+#
+# Set pid file if not given
+#
+if test -z "$mysqld_pid_file_path"
+then
+  mysqld_pid_file_path=$datadir/`hostname`.pid
+else
+  case "$mysqld_pid_file_path" in
+    /* ) ;;
+    * )  mysqld_pid_file_path="$datadir/$mysqld_pid_file_path" ;;
+  esac
+fi
+
+case "$mode" in
+  'start')
+    # Start daemon
+
+    # Safeguard (relative paths, core dumps..)
+    cd $basedir
+
+    echo $echo_n "Starting MySQL"
+    if test -x $bindir/mysqld_safe
+    then
+      # Give extra arguments to mysqld with the my.cnf file. This script
+      # may be overwritten at next upgrade.
+      $bindir/mysqld_safe --datadir="$datadir" --pid-file="$mysqld_pid_file_path" $other_args >/dev/null &
+      wait_for_pid created "$!" "$mysqld_pid_file_path"; return_value=$?
+
+      # Make lock for RedHat / SuSE
+      if test -w "$lockdir"
+      then
+        touch "$lock_file_path"
+      fi
+
+      exit $return_value
+    else
+      log_failure_msg "Couldn't find MySQL server ($bindir/mysqld_safe)"
+    fi
+    ;;
+
+  'stop')
+    # Stop daemon. We use a signal here to avoid having to know the
+    # root password.
+
+    if test -s "$mysqld_pid_file_path"
+    then
+      mysqld_pid=`cat "$mysqld_pid_file_path"`
+
+      if (kill -0 $mysqld_pid 2>/dev/null)
+      then
+        echo $echo_n "Shutting down MySQL"
+        kill $mysqld_pid
+        # mysqld should remove the pid file when it exits, so wait for it.
+        wait_for_pid removed "$mysqld_pid" "$mysqld_pid_file_path"; return_value=$?
+      else
+        log_failure_msg "MySQL server process #$mysqld_pid is not running!"
+        rm "$mysqld_pid_file_path"
+      fi
+
+      # Delete lock for RedHat / SuSE
+      if test -f "$lock_file_path"
+      then
+        rm -f "$lock_file_path"
+      fi
+      exit $return_value
+    else
+      log_failure_msg "MySQL server PID file could not be found!"
+    fi
+    ;;
+
+  'restart')
+    # Stop the service and regardless of whether it was
+    # running or not, start it again.
+    if $0 stop  $other_args; then
+      $0 start $other_args
+    else
+      log_failure_msg "Failed to stop running server, so refusing to try to start."
+      exit 1
+    fi
+    ;;
+
+  'reload'|'force-reload')
+    if test -s "$mysqld_pid_file_path" ; then
+      read mysqld_pid <  "$mysqld_pid_file_path"
+      kill -HUP $mysqld_pid && log_success_msg "Reloading service MySQL"
+      touch "$mysqld_pid_file_path"
+    else
+      log_failure_msg "MySQL PID file could not be found!"
+      exit 1
+    fi
+    ;;
+  'status')
+    # First, check to see if pid file exists
+    if test -s "$mysqld_pid_file_path" ; then 
+      read mysqld_pid < "$mysqld_pid_file_path"
+      if kill -0 $mysqld_pid 2>/dev/null ; then 
+        log_success_msg "MySQL running ($mysqld_pid)"
+        exit 0
+      else
+        log_failure_msg "MySQL is not running, but PID file exists"
+        exit 1
+      fi
+    else
+      # Try to find appropriate mysqld process
+      mysqld_pid=`pidof $libexecdir/mysqld`
+
+      # test if multiple pids exist
+      pid_count=`echo $mysqld_pid | wc -w`
+      if test $pid_count -gt 1 ; then
+        log_failure_msg "Multiple MySQL running but PID file could not be found ($mysqld_pid)"
+        exit 5
+      elif test -z $mysqld_pid ; then 
+        if test -f "$lock_file_path" ; then 
+          log_failure_msg "MySQL is not running, but lock file ($lock_file_path) exists"
+          exit 2
+        fi 
+        log_failure_msg "MySQL is not running"
+        exit 3
+      else
+        log_failure_msg "MySQL is running but PID file could not be found"
+        exit 4
+      fi
+    fi
+    ;;
+    *)
+      # usage
+      basename=`basename "$0"`
+      echo "Usage: $basename  {start|stop|restart|reload|force-reload|status}  [ MySQL server options ]"
+      exit 1
+    ;;
+esac
+
+exit 0
+
+```
+
+然后执行mysql_install_db 就会根据my.cnf安装db
+```
+/usr/bin/mysql_install_db
+```
+
+如果是成功的话看到类似下面的信息
+
+```
+To start mysqld at boot time you have to copy
+support-files/mysql.server to the right place for your system
+
+PLEASE REMEMBER TO SET A PASSWORD FOR THE MySQL root USER !
+To do so, start the server, then issue the following commands:
+
+  /usr/bin/mysqladmin -u root password 'new-password'
+  /usr/bin/mysqladmin -u root -h localhost.localdomain password 'new-password'
+
+Alternatively you can run:
+
+  /usr/bin/mysql_secure_installation
+
+which will also give you the option of removing the test
+databases and anonymous user created by default.  This is
+strongly recommended for production servers.
+
+See the manual for more instructions.
+
+You can start the MySQL daemon with:
+
+  cd /usr ; /usr/bin/mysqld_safe &
+
+You can test the MySQL daemon with mysql-test-run.pl
+
+  cd mysql-test ; perl mysql-test-run.pl
+
+Please report any problems at http://bugs.mysql.com/
+
+The latest information about MySQL is available on the web at
+
+  http://www.mysql.com
+
+Support MySQL by buying support/licenses at http://shop.mysql.com
+
+WARNING: Found existing config file /usr/my.cnf on the system.
+Because this file might be in use, it was not replaced,
+but was used in bootstrap (unless you used --defaults-file)
+and when you later start the server.
+The new default config file was created as /usr/my-new.cnf,
+please compare it with your file and take the changes you need.
+
+WARNING: Default config file /etc/my.cnf exists on the system
+This file will be read by default by the MySQL server
+If you do not want to use this, either remove it, or use the
+--defaults-file argument to mysqld_safe when starting the server
+```
+
+
+1. 启动mysql服务
+```
+/etc/init.d/mysql start
+```
+2. 设置开机启动
+```
+chkconfig --add mysql 
+chkconfig mysql on
+```
+3. 打开远程访问权限
+```
+mysql -uroot -p
+mysql> GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' IDENTIFIED BY '123456' WITH GRANT OPTION;
+mysql> flush privileges;
+```
+
+# 安装redis
+```
+yum install jemalloc-3.6.0-1.el7.x86_64.rpm
+rpm -ivh redis-2.8.19-2.el7.x86_64.rpm
+
+systemctl start redis.service
+systemctl enable redis.service
+```
+开发和维护时可以开启redis的远程连接
+vim /etc/redis.conf
+注释掉 bind 127.0.0.1
+如果是redis3.2之后，redis增加了protected-mode 即使注释掉bind 127.0.0.1，再访问redis时还是会报错
+
 # mysql 开启远程
 ```sql
 GRANT ALL PRIVILEGES ON *.* TO 'myuser'@'%'IDENTIFIED BY 'mypassword' WITH GRANT OPTION; 
